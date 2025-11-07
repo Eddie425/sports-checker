@@ -3,24 +3,31 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "lint": "eslint",
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "next start -p ${PORT:-3000}",
+    "postinstall": "npx playwright install --with-deps || true"
   },
   "dependencies": {
+    "daisyui": "^5.4.4",
+    "next": "16.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "next": "16.0.1"
+    "sharp": "^0.34.4",
+    "tesseract.js": "^6.0.1",
+    "puppeteer": "^22.0.0"
   },
   "devDependencies": {
-    "typescript": "^5",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4",
+    "autoprefixer": "^10.4.21",
     "eslint": "^9",
-    "eslint-config-next": "16.0.1"
+    "eslint-config-next": "16.0.1",
+    "playwright": "^1.56.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5"
   }
 }
