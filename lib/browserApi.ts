@@ -1,5 +1,4 @@
-// /lib/browserApi.ts
-import fs from "node:fs";
+// lib/browserApi.ts
 import path from "node:path";
 import os from "node:os";
 import { chromium } from "playwright";
@@ -10,16 +9,7 @@ const PING_PAGE = `${ORIGIN}/betslipbrowser`;
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
 
-if (!fs.existsSync(PROFILE_DIR)) {
-  try {
-    fs.mkdirSync(PROFILE_DIR, { recursive: true });
-  } catch (e) {
-    console.warn("[browserApi] cannot create profile dir:", e);
-  }
-}
-
 export async function fetchBetInBrowser(code: string) {
-  // 使用 persistentContext 以重用 cookie（cf_clearance）
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
     headless: true,
     userAgent: UA,
@@ -27,41 +17,21 @@ export async function fetchBetInBrowser(code: string) {
     timezoneId: "Asia/Taipei",
     viewport: { width: 1300, height: 820 },
     bypassCSP: true,
-    ignoreHTTPSErrors: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--no-zygote",
-      "--single-process",
-      "--disable-blink-features=AutomationControlled",
-    ],
+    args: ["--disable-blink-features=AutomationControlled"],
   });
 
   const page = await context.newPage();
 
   try {
-    // 先打入同源頁面，讓 Cloudflare/JS 初始化
     await page.goto(PING_PAGE, {
       waitUntil: "domcontentloaded",
-      timeout: 60000,
+      timeout: 45000,
     });
-    // 等待 cf cookie 與 SERVERID 出現（最長 90s）
-    await page
-      .waitForFunction(
-        () =>
-          document.cookie.includes("cf_clearance") &&
-          document.cookie.includes("SERVERID"),
-        { timeout: 90000 }
-      )
-      .catch(() => {
-        // 若等不到也別 crash，保留頁面內容去嘗試 API（有時 Cloudflare 以其它方式成功）
-        console.warn("[browserApi] cf cookies not detected in time");
-      });
+    await page.waitForTimeout(2000);
 
-    // 再做 fetch（會帶上 cookie）
-    const apiUrl = `${ORIGIN}/API/betting/fo/bets/code/${code}`;
+    const apiUrl = `${ORIGIN}/API/betting/fo/bets/code/${encodeURIComponent(
+      code
+    )}`;
 
     const result = await page.evaluate(async (url) => {
       const r = await fetch(url, {
@@ -77,8 +47,15 @@ export async function fetchBetInBrowser(code: string) {
           "x-mgs-businessunit": "2",
         },
       });
-      const text = await r.text();
-      return { status: r.status, text };
+
+      // ✅ 只讀一次 body：先嘗試 JSON，失敗就回 text
+      let data: unknown;
+      try {
+        data = await r.clone().json();
+      } catch {
+        data = await r.text();
+      }
+      return { status: r.status, data };
     }, apiUrl);
 
     return result;
@@ -86,7 +63,6 @@ export async function fetchBetInBrowser(code: string) {
     try {
       await page.close();
     } catch {}
-    // 不關 context（persistentContext）以便下次重用 cookie
-    // context stays open on purpose
+    // 保留 context 以保留 cf_clearance
   }
 }

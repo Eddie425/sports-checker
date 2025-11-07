@@ -1,5 +1,6 @@
 // lib/callSlipApi.ts
 const ORIGIN = "https://www-talo-ssb-pr.sportslottery.com.tw";
+import { readBody } from "./http";
 
 const DEFAULT_HEADERS = {
   accept: "application/json",
@@ -22,10 +23,10 @@ const DEFAULT_HEADERS = {
   "sec-fetch-dest": "empty",
   "sec-fetch-mode": "cors",
   "sec-fetch-site": "same-origin",
-};
+} as const;
 
 export async function callSlipApi(code: string, cookieHeader: string) {
-  const url = `${ORIGIN}/API/betting/fo/bets/code/${code}`;
+  const url = `${ORIGIN}/API/betting/fo/bets/code/${encodeURIComponent(code)}`;
 
   const headers = new Headers(DEFAULT_HEADERS as Record<string, string>);
   headers.set("cookie", cookieHeader);
@@ -35,13 +36,11 @@ export async function callSlipApi(code: string, cookieHeader: string) {
     headers,
   });
 
-  let data: unknown = null;
-  try {
-    data = await resp.json();
-  } catch {
-    // 有時 Cloudflare 403 會回 HTML
-    data = { raw: await resp.text() };
-  }
+  const data = await readBody(resp); // ✅ 僅讀一次（或用 clone），不會觸發「Body already been read」
 
-  return { status: resp.status, data, headers: resp.headers };
+  return {
+    status: resp.status,
+    data,
+    headers: Object.fromEntries(resp.headers.entries()),
+  };
 }

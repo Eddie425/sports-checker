@@ -1,76 +1,46 @@
 // app/api/check/route.ts
 import { NextResponse } from "next/server";
-import {
-  fetchWithSession,
-  currentStatus,
-  startCfKeepalive,
-} from "@/lib/cfSession";
 import { callSlipApi } from "@/lib/callSlipApi";
-
-startCfKeepalive();
-export const dynamic = "force-dynamic";
+// 若你是用 Cloudflare/Playwright 取得 cookie，請在此導入你的方法：
+// import { currentStatus } from "@/lib/cfSession";
 
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  // 同時支援 ?code= 與 ?ticket=
-  const raw = (
-    url.searchParams.get("code") ||
-    url.searchParams.get("ticket") ||
-    ""
-  ).trim();
-  const debug = url.searchParams.get("debug") || "";
-
-  // 只保留數字，避免圖片 OCR 混入空白或奇怪字元
-  const code = raw.replace(/\D+/g, "");
-
-  if (!/^\d{14}$/.test(code)) {
-    return NextResponse.json(
-      {
-        status: 400,
-        error: "code must be 14 digits",
-        meta: { got: raw, normalized: code },
-      },
-      { status: 400 }
-    );
-  }
-
   try {
-    // 確保 cookie 有效
-    const st = await currentStatus();
+    const { searchParams } = new URL(req.url);
+    const code = searchParams.get("ticket")?.trim();
 
-    // 直接用目前的 cookie 打官方
-    const first = await callSlipApi(code, st.cookieHeader);
-
-    if (first.status === 403) {
-      // 觸發刷新，再打一次
-      const ping = await fetchWithSession("https://example.com/ping", {
-        method: "GET",
-      });
-      ping.body?.cancel?.();
-
-      const st2 = await currentStatus();
-      const second = await callSlipApi(code, st2.cookieHeader);
+    if (!code) {
       return NextResponse.json(
-        debug
-          ? {
-              status: second.status,
-              data: second.data,
-              meta: { initStatus: st, retryStatus: st2 },
-            }
-          : { status: second.status, data: second.data }
+        { status: 400, error: "missing ticket" },
+        { status: 400 }
       );
     }
 
+    // 取得 Cookie（以下提供三種取法，擇一保留） -------------------
+    // A) 若你在前端把 cookie 放 header 傳上來：
+    // const forwardedCookie = req.headers.get("cookie") ?? "";
+
+    // B) 若你有 cfSession 的 keepalive/context（推薦）：
+    // const st = await currentStatus();
+    // const forwardedCookie = st.cookieHeader;
+
+    // C) 如果你暫時沒有 cookie（只做本地測試會被 CF 擋），先給空字串：
+    const forwardedCookie = "";
+    // -------------------------------------------------------------
+
+    const result = await callSlipApi(code, forwardedCookie);
+
+    // 直接回傳查詢結果；這裡不再對任何 Response 二次讀取 body
     return NextResponse.json(
-      debug
-        ? { status: first.status, data: first.data, meta: { initStatus: st } }
-        : { status: first.status, data: first.data }
+      {
+        status: result.status,
+        data: result.data,
+      },
+      { status: 200 }
     );
-  } catch (e: any) {
-    console.error("[/api/check] ERROR:", e);
-    return NextResponse.json(
-      { status: 500, error: String(e?.message || e) },
-      { status: 200 } // 前端格式一致
-    );
+  } catch (e) {
+    const msg =
+      e instanceof Error ? e.message : typeof e === "string" ? e : "unknown";
+    return NextResponse.json({ status: 500, error: msg }, { status: 500 });
   }
 }
